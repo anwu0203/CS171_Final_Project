@@ -28,7 +28,8 @@ def get_user_input():
                 print("exception in trying to connect to server", flush=True)
         elif user_input == 'print':
             for out_sock in out_socks:
-                print(f'conn: {out_sock[0]} addr: {out_sock[1][0]}, {out_sock[1][1]}', flush=True)
+                print(f'conn: {out_sock[0]} addr: {out_sock[1]}', flush=True)
+                print(f'laddr {out_sock[0].getsockname()}, raddr {out_sock[0].getpeername()}')
         else:
             for out_sock in out_socks:
                 try:
@@ -48,6 +49,7 @@ def respond(conn, addr):
         if not data:
             # close connection to node
             conn.close()
+            out_socks.remove((conn, addr))
             print(f"connection closed from {addr[1]}", flush=True)
             break
 
@@ -98,5 +100,5 @@ if __name__ == "__main__":
             print("exception in accepting incoming connection", flush=True)
             break
         out_socks.append((conn, addr))
-        nodes[addr[1]] = ['', conn, -1]
+        # nodes[addr[1]] = ['', conn, -1]
         threading.Thread(target=respond, args=(conn, addr)).start()
