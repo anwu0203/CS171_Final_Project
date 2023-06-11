@@ -71,12 +71,12 @@ class LamportClock:
 		return self.pid 
 	
 class BallotNum(LamportClock):
-	def __init__(self, pid):
-		super().__init__(pid)
-		# Depth I am aware of as a node
-		self.depth = 0 
+	# def __init__(self, pid):
+	# 	super().__init__(pid)
+	# 	# Depth I am aware of as a node
+	# 	self.depth = 0 
 
-	def __init__(self, pid, time, depth):
+	def __init__(self, pid, time=0, depth=0):
 		super().__init__(pid, time)
 		# Depth I am aware of as a node
 		self.depth = depth 
@@ -138,6 +138,7 @@ class HashBlock:
 		return f'{self.hash_ptr.get_hash()}{str(self.transaction)}{str(self.nonce)}'
 	
 	# Formatted representation of the hashblock with extra information not in the block (i.e. timestamp)
+	# TODO: Update this for the specific app
 	def __repr__(self):
 		parsed = self.transaction.split('$')
 		sender = parsed[0][:2]
