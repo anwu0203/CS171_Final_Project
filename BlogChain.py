@@ -147,6 +147,21 @@ class BlogChain():
 			cur_post = self.chain[cur_ptr].get_post()
 			prev_hash = self.chain[cur_ptr].get_prev_hash()
 			nonce = self.chain[cur_ptr].get_nonce()
+			ret = f"({prev_hash}, {cur_post[0]}, {cur_post[1]}, {cur_post[2]}, {cur_post[3]}, {nonce}){ret}"
+			if cur_ptr > 0:
+				ret = ", " + ret
+			cur_ptr = self.chain[cur_ptr].get_prev_ptr()
+		ret = "[" + ret
+		return ret
+	
+	def get_data(self):
+		# returns entire BlogChain without spaces
+		ret = "]"
+		cur_ptr = self.ptr
+		while cur_ptr != -1:
+			cur_post = self.chain[cur_ptr].get_post()
+			prev_hash = self.chain[cur_ptr].get_prev_hash()
+			nonce = self.chain[cur_ptr].get_nonce()
 			ret = f"({prev_hash},{cur_post[0]},{cur_post[1]},{cur_post[2]},{cur_post[3]},{nonce}){ret}"
 			if cur_ptr > 0:
 				ret = "," + ret

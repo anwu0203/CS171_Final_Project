@@ -146,15 +146,23 @@ def process_user_input(event):
 				elif command.startswith('fixLink'):
 					pass
 				elif command.startswith('view'):
-					pass
+					username = command[5:]
+					print(local_blog.get_user_posts(username), flush=True)
 				elif command.startswith('read'):
-					pass
+					title = command[5:]
+					print(local_blog.get_post_content(title), flush=True)
 				elif command == 'blockchain':
-					pass
+					print(local_blog.get_blogchain(), flush=True)
 				elif command == 'queue':
-					pass
+					print_q_flag = True
+					for op in list(request_queue.queue):
+						if print_q_flag:
+							print(op, end='', flush=True)
+							print_q_flag = False
+						else:
+							print(f', {op}', end='', flush=True)
 				elif command == 'blog':
-					pass
+					print(local_blog.get_all_posts(), flush=True)
 		else:
 			sleep(0.1)
 
