@@ -17,6 +17,19 @@ from utils import PriorityQueue
 from BlogChain import BlogChain
 
 def connect():
+	global missing_replies
+	global out_socks
+	global in_socks
+	global PID
+	global LEADER
+	global local_blog
+	global req_num
+	global ballot_num
+	global accept_num
+	global val_dict
+	global accepted_promises
+	global promise_count
+	global accept_count
 	sleep(3)
 	for portID, port in PORTS.items():
 		if (portID != PID):
@@ -31,12 +44,25 @@ def connect():
 	sleep(1)
 	for sockID, out_sock in out_socks.items():
 		try:
-			out_sock[0].sendall(bytes('Hi ' + PID, "utf-8"))
+			out_sock[0].sendall(bytes('Hi?/' + PID, "utf-8"))
 		except:
 			print("exception in sending to server", flush=True)
 
 # Generic logic for phase II: Accept - Proposer
 def broadcast_accept(val):
+	global missing_replies
+	global out_socks
+	global in_socks
+	global PID
+	global LEADER
+	global local_blog
+	global req_num
+	global ballot_num
+	global accept_num
+	global val_dict
+	global accepted_promises
+	global promise_count
+	global accept_count
 	if (promise_count[0]) >= 3:
 		# We have acheived a majority time to broadcast our accepted value
 		# Consume the accepted promises
@@ -56,6 +82,7 @@ def broadcast_accept(val):
 			for sockID, out_sock in out_socks.items():
 				try:
 					out_sock[0].sendall(bytes(accept_msg, "utf-8"))
+					print("Sent:",accept_msg, flush=True)
 				except:
 					print("exception in sending to server", flush=True)
 		else:
@@ -70,11 +97,25 @@ def broadcast_accept(val):
 			for sockID, out_sock in out_socks.items():
 				try:
 					out_sock[0].sendall(bytes(accept_msg, "utf-8"))
+					print("Sent:",accept_msg, flush=True)
 				except:
 					print("exception in sending to server", flush=True)
 			pass				
 
 def handle_leader_tasks(event):
+	global missing_replies
+	global out_socks
+	global in_socks
+	global PID
+	global LEADER
+	global local_blog
+	global req_num
+	global ballot_num
+	global accept_num
+	global val_dict
+	global accepted_promises
+	global promise_count
+	global accept_count
 	while True:
 		if event.is_set():
 			sleep(0.1)
@@ -85,17 +126,19 @@ def handle_leader_tasks(event):
 				# Compute nonce 
 				# Begin Phase II
 				broadcast_accept(val)
-				start = time.time()
+				
+				start = time()
 				end = start + timeout
-				while((accept_count[0] < 3) or (time() > end)):
+				while((accept_count[0] < 3) or (time() < end)):
 					sleep(0.1)
 				if accept_count[0] >= 3:
 					# Append the proposed block to the blockchain
 					# Apply the corresponding operation to its blog
-					decide_msg = 'DECIDE' + '?/' + ballot_num + '+/' + val
+					decide_msg = 'DECIDE' + '?/' + str(ballot_num) + '+/' + val
 					for sockID, out_sock in out_socks.items():
 						try:
 							out_sock[0].sendall(bytes(decide_msg, "utf-8"))
+							print("Sent:",decide_msg, flush=True)
 						except:
 							print("exception in sending to server at", out_sock[1], flush=True)
 					pass
@@ -103,11 +146,21 @@ def handle_leader_tasks(event):
 					# We failed to reach a majority of ACCEPTED
 					# Fail and try again after some time?
 					pass
-			
-			
-
 
 def process_user_input(event):
+	global missing_replies
+	global out_socks
+	global in_socks
+	global PID
+	global LEADER
+	global local_blog
+	global req_num
+	global ballot_num
+	global accept_num
+	global val_dict
+	global accepted_promises
+	global promise_count
+	global accept_count
 	while True:
 		# if event.is_set():
 		# 	sleep(0.1)
@@ -118,14 +171,35 @@ def process_user_input(event):
 			# Check if we need to acheive consesnus to process the command
 			if command.startswith('post') or command.startswith('comment'):
 				# Otherwise, begin leader election and/or repair ?
-				if LEADER == []:
+				if not LEADER:
 					ballot_num.inc_time()
-					decide_msg = 'PREPARE' + '?/' + ballot_num + '+/' + str(req_num[0])
+					val_dict['propose_val'] = command.split('(')[1].strip(')')
+					decide_msg = 'PREPARE' + '?/' + str(ballot_num) + '+/' + str(req_num[0])
+					start = time()
+					end = start + timeout
+					promise_count[0] += 1
 					for sockID, out_sock in out_socks.items():
 						try:
 							out_sock[0].sendall(bytes(decide_msg, "utf-8"))
+							print("Sent:",decide_msg, flush=True)
 						except:
 							print("exception in sending to server at", out_sock[1], flush=True)
+					while((promise_count[0] < 3) or (time() < end)):
+						print("waiting for promises",promise_count[0], end,  flush=True)
+						sleep(0.1)
+					if (promise_count[0]) < 3:
+						print('We not the leader :(', flush=True)
+						break
+					LEADER.append(PID)
+					broadcast_accept(val_dict['propose_val'])
+					start = time()
+					end = start + timeout
+					accept_count[0] += 1
+					while((accept_count[0] < 3) or (time() < end)):
+						print("waiting for accepted", flush=True)
+						sleep(0.1)
+					if accept_count[0] < 3:
+						print('Accept Failed but we are the leader', flush=True)
 					pass
 				# Check if we are the leader 
 				elif LEADER[0] == PID:
@@ -135,10 +209,11 @@ def process_user_input(event):
 				else:
 					try:
 						out_socks[LEADER[0]].out_sock[0].sendall(bytes(input_queue.get(), "utf-8"))
+						print("Sent:",input_queue.get(), flush=True)
 					except:
 						print("exception in sending to leader", flush=True)
 						# Let the election start again, by saying we know no leader
-						LEADER = []
+						LEADER.clear()
 						input_queue.put(command)
 			else:
 				if command.startswith('failLink'):
@@ -159,6 +234,19 @@ def process_user_input(event):
 			sleep(0.1)
 
 def get_user_input():
+	global missing_replies
+	global out_socks
+	global in_socks
+	global PID
+	global LEADER
+	global local_blog
+	global req_num
+	global ballot_num
+	global accept_num
+	global val_dict
+	global accepted_promises
+	global promise_count
+	global accept_count
 	while True:
 		user_input = input()
 		# ********** Operator Commands **********
@@ -183,141 +271,168 @@ def get_user_input():
 			_exit(0)
 		elif user_input == 'failLink':
 			input_queue.put(user_input)
-
 		elif user_input == 'fixLink':
 			input_queue.put(user_input)
-
 		elif user_input == 'blockchain':
 			input_queue.put(user_input)
-
 		elif user_input == 'queue':
 			input_queue.put(user_input)
-
 		# ********** Application Commands **********
 		# If it is a application command and requires replication add it to our queue
 		elif user_input.startswith('post'):
 			input_queue.put(user_input)
-
 		elif user_input == 'comment':
 			input_queue.put(user_input)
-
 		elif user_input == 'blog':
 			input_queue.put(user_input)
-
 		elif user_input == 'view':
 			input_queue.put(user_input)
-
 		elif user_input == 'read':
 			input_queue.put(user_input)
-
 		else:
 			# UNCOMMENT: to broadcast messages
-			'''
+
 			for sockID, out_sock in out_socks.items():
 				try:
 					out_sock[0].sendall(bytes(user_input, "utf-8"))
+					print("Sent:",user_input, flush=True)
 				except:
 					print("exception in sending to server", flush=True)
-			'''
+		
 
 def handle_msg(data, raddr):
+	global missing_replies
+	global out_socks
+	global in_socks
+	global PID
+	global LEADER
+	global local_blog
+	global req_num
+	global ballot_num
+	global accept_num
+	global val_dict
+	global accepted_promises
+	global promise_count
+	global accept_count
 	if data:
-		op, message = data.split('?/')
+		print("Processing:", data, flush=True)
+		if (data.count('?/') > 0):
+			print("We know this message", flush=True)
+			op, message = data.split('?/')
 
-		if op == 'Hi':
-			pid = data[3:]
-			for portID, port in PORTS.items():
-				if pid == portID:
-					in_socks[portID] = (conn, raddr)
-					break
+			if op == 'Hi':
+				pid = message
+				for portID, port in PORTS.items():
+					if pid == portID:
+						in_socks[portID] = (conn, raddr)
+						break
 
-			# test outward connection to target node
-			sleep(3)
-			try:
-				out_socks[pid][0].sendall(bytes("connection check", "utf-8"))
-				print("check success", flush=True)
-			except:
-				print(f"check failed {pid}, {port}", flush=True)
+				# test outward connection to target node
+				sleep(3)
 				try:
-					out_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-					out_sock.connect((IP, port))
-					raddr = out_sock.getpeername()
-					out_socks[pid] = (out_sock, raddr)
-					print(f"connected to {raddr[1]}", flush=True)
+					out_socks[pid][0].sendall(bytes("connection check", "utf-8"))
+					print("check success", flush=True)
 				except:
-					print("exception in trying to connect to server", flush=True)
-				sleep(1)
-				for sockID, out_sock in out_socks.items():
+					print(f"check failed {pid}, {port}", flush=True)
 					try:
-						out_sock[0].sendall(bytes('Hi?/' + PID, "utf-8"))
+						out_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+						out_sock.connect((IP, port))
+						raddr = out_sock.getpeername()
+						out_socks[pid] = (out_sock, raddr)
+						print(f"connected to {raddr[1]}", flush=True)
 					except:
-						print("exception in sending to server", flush=True)
-		# ********* Participant/Acceptor *********
-		elif op == 'PREPARE':
-			# The message contatins the ballot number
-			bal, req =  message.split('+/')
-			sequence_num, pid, depth = bal.split(',')
-			bal = BallotNum(pid, int(sequence_num), int(depth))
-			# Respond ONLY IF the ballot num of the proposer is of equal depth and newer(of a greater PID if equal time)
-			if (ballot_num <= bal) and (req_num[0] < int(req)):
-				# Update our ballot_num
-				ballot_num = bal
-				req_num[0] = int(req)
-				LEADER[0] = pid
-				reply = 'PROMISE?/' + str(bal) + '+/' + str(accept_num) + '+/' + (accept_val) + '+/' + str(req_num[0])
-				try:
-					out_socks[pid][0].sendall(bytes(reply, "utf-8"))
-				except: 
-					print("exception in sending to proposer at", raddr, flush=True) 
-			
-		elif op == 'ACCEPT':
-			bal, v, req =  message.split('+/')
-			sequence_num, pid, depth = bal.split(',')
-			b = BallotNum(pid, int(sequence_num), int(depth))
-			if (ballot_num <= b)and (req_num[0] < int(req)):
-				accept_num = b
-				accept_val = v
-				reply = 'ACCEPTED?/' + str(b) + '+/' + str(v) + '+/' + str(req_num[0])
-				try:
-					out_socks[pid][0].sendall(bytes(reply, "utf-8"))
-				except: 
-					print("exception in sending to proposer at", raddr, flush=True)
-			pass
-		elif op =='DECIDE':
-			# TODO: Commit the value in the decide message (we already saved it) to disk
-			pass
-		# ********* Proposer/Leader *********
-		elif op == 'PROMISE':
-			# Ensure a majority
-			if (promise_count[0]) < 3:
-				# Store messages in case we discover a value here that has been accepted
-				bal, b, val, req =  message.split('+/')
+						print("exception in trying to connect to server", flush=True)
+					sleep(1)
+					for sockID, out_sock in out_socks.items():
+						try:
+							out_sock[0].sendall(bytes('Hi?/' + PID, "utf-8"))
+						except:
+							print("exception in sending to server", flush=True)
+			# ********* Participant/Acceptor *********
+			elif op == 'PREPARE':
+				# The message contatins the ballot number
+				bal, req =  message.split('+/')
 				sequence_num, pid, depth = bal.split(',')
-				accept_sequence_num, accept_pid, accept_depth = b.split(',')
 				bal = BallotNum(pid, int(sequence_num), int(depth))
-				b = BallotNum(accept_pid, int(accept_sequence_num), int(accept_depth))
-				promise_msg = (bal, b, val, int(req))
-				# Only respond to messages with right ballot_num for the leader we know of 
-				if(bal == ballot_num):
-					accepted_promises.append(promise_msg)
-			promise_count[0] += 1
-
-		elif op == 'ACCEPTED':
-			if (accept_count[0]) < 3:
+				# Respond ONLY IF the ballot num of the proposer is of equal depth and newer(of a greater PID if equal time)
+				if (ballot_num <= bal) and (req_num[0] <= int(req)):
+					# Update our ballot_num
+					ballot_num = bal
+					req_num[0] = int(req)
+					if not LEADER:
+						LEADER.append(pid)
+					else:
+						LEADER[0] = pid
+					reply = 'PROMISE?/' + str(bal) + '+/' + str(accept_num) + '+/' + (val_dict['accept_val']) + '+/' + str(req_num[0])
+					try:
+						out_socks[pid][0].sendall(bytes(reply, "utf-8"))
+						print("Sent:", reply, flush=True)
+					except: 
+						print("exception in sending to proposer at", raddr, flush=True) 
+				
+			elif op == 'ACCEPT':
 				bal, v, req =  message.split('+/')
 				sequence_num, pid, depth = bal.split(',')
 				b = BallotNum(pid, int(sequence_num), int(depth))
-				accept_msg = (b, v, int(req))
-				# Only respond to messages with right ballot_num for the leader we know of 
-				if(bal == ballot_num):
-					accepted_promises.append(accept_msg)
-					accept_count[0] += 1
+				if (ballot_num <= b)and (req_num[0] <= int(req)):
+					accept_num = b
+					val_dict['accept_val'] = v
+					reply = 'ACCEPTED?/' + str(b) + '+/' + str(v) + '+/' + str(req_num[0])
+					try:
+						out_socks[pid][0].sendall(bytes(reply, "utf-8"))
+						print("Sent:", reply, flush=True)
+					except: 
+						print("exception in sending to proposer at", raddr, flush=True)
+				pass
+			elif op =='DECIDE':
+				# TODO: Commit the value in the decide message (we already saved it) to disk
+				pass
+			# ********* Proposer/Leader *********
+			elif op == 'PROMISE':
+				# Ensure a majority
+				if (promise_count[0]) < 3:
+					# Store messages in case we discover a value here that has been accepted
+					bal, b, val, req =  message.split('+/')
+					sequence_num, pid, depth = bal.split(',')
+					accept_sequence_num, accept_pid, accept_depth = b.split(',')
+					bal = BallotNum(pid, int(sequence_num), int(depth))
+					b = BallotNum(accept_pid, int(accept_sequence_num), int(accept_depth))
+					promise_msg = (bal, b, val, int(req))
+					# Only respond to messages with right ballot_num for the leader we know of 
+					if(bal == ballot_num):
+						accepted_promises.append(promise_msg)
+				promise_count[0] += 1
+
+			elif op == 'ACCEPTED':
+				if (accept_count[0]) < 3:
+					bal, v, req =  message.split('+/')
+					sequence_num, pid, depth = bal.split(',')
+					b = BallotNum(pid, int(sequence_num), int(depth))
+					accept_msg = (b, v, int(req))
+					# Only respond to messages with right ballot_num for the leader we know of 
+					if(bal == ballot_num):
+						accepted_promises.append(accept_msg)
+						accept_count[0] += 1
+					if(accept_count[0] == 3):
+						threading.Thread(target=handle_leader_tasks, args=(event)).start()
 
 
 
 
 def respond(conn, raddr):
-	
+	global missing_replies
+	global out_socks
+	global in_socks
+	global PID
+	global LEADER
+	global local_blog
+	global req_num
+	global ballot_num
+	global accept_num
+	global val_dict
+	global accepted_promises
+	global promise_count
+	global accept_count
 	# listen for incoming messages
 	while True:
 		try:
@@ -348,12 +463,23 @@ def respond(conn, raddr):
 		# so simulated network delay and message handling don't block receive
 		threading.Thread(target=handle_msg, args=(data, raddr)).start()
 
-		
-		
-			
-
-
 if __name__ == "__main__":
+
+	global missing_replies
+	global out_socks
+	global in_socks
+	global PID
+	global LEADER
+	global local_blog
+	global req_num
+	global ballot_num
+	global accept_num
+	global val_dict
+	global request_queue
+	global input_queue
+	global accepted_promises
+	global promise_count
+	global accept_count
 
 	sleep(1)
 
@@ -380,7 +506,7 @@ if __name__ == "__main__":
 	out_socks = {}
 	in_socks = {}
 
-	global missing_replies
+	
 	missing_replies = [5]
 	timeout = 10
 
@@ -398,8 +524,7 @@ if __name__ == "__main__":
 	# This should beat all processes at the start, not used for comparison
 	accept_num = BallotNum('P0')
 	# The transaction string that is accepted and to be comitted and attached  
-	accept_val = 'None'
-
+	val_dict = {'accept_val':'None', 'propose_val':'None' }
 	# Server Request Queue
 	request_queue = PriorityQueue()
 	# Accepted Promises (for when node is the leader)
