@@ -46,6 +46,10 @@ class LamportClock:
 		self.time = 0
 		self.pid = pid
 
+	def __init__(self, pid, time):
+		self.time = time
+		self.pid = pid
+	
 	def __str__(self):
 		return f'{self.time} {self.pid}'
 
@@ -55,25 +59,60 @@ class LamportClock:
 	def inc_time(self):
 		self.time += 1
 		print("Local Time:", self.time)
-
+	
 	def sync(self, recv_clock):
 		self.time = max(int((recv_clock).split(' ')[0]), self.time)
 		self.inc_time()
+	
+	def get_time(self):
+		return self.time
+	
+	def get_pid(self):
+		return self.pid 
 	
 class BallotNum(LamportClock):
 	def __init__(self, pid):
 		super().__init__(pid)
 		# Depth I am aware of as a node
 		self.depth = 0 
+
+	def __init__(self, pid, time, depth):
+		super().__init__(pid, time)
+		# Depth I am aware of as a node
+		self.depth = depth 
+
 	# Call when a node commits a block
 	def inc_depth(self):
 		self.depth += 1
 		print("Local Depth:", self.depth)
+
+	def get_depth(self):
+		return self.depth
+	
 	def __str__(self):
-		return f'{self.time} {self.pid} {self.depth}'
+		return f'{self.time},{self.pid},{self.depth}'
 
 	def __repr__(self):
 		return f'({self.time}, {self.pid}, {self.depth})'
+	
+	def __lt__(self, right):
+		# Only going to respond if they are consistent nodes
+		if self.get_depth() == right.get_depth():
+			if self.get_time() != right.get_time():
+				return self.get_time() < right.get_time()
+			elif self.get_pid() != right.get_pid():
+				return self.get_pid() < right.get_pid()
+		else:
+			return False
+	
+	def __le__(self, right):
+		# Only going to respond if they are consistent nodes
+		if self.get_depth() == right.get_depth():
+			return self.get_time() <= right.get_time()
+		else:
+			return False
+		
+		
 
 class HashPointer:
 	def __init__(self, index, hash_prev):
@@ -91,7 +130,7 @@ class HashBlock:
 		# String to be treated as the transaction
 		self.transaction = transaction
 		# Calculated nonce less than nonce string < NONCE_STRING
-		self.nonce = nonce#
+		self.nonce = nonce
 		# Ballot Number / Timestamp associated with the transaction
 		self.llc = llc
 	# String representation of the hashblock

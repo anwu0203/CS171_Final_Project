@@ -6,9 +6,9 @@ import threading
 from os import _exit
 from sys import stdout
 from time import sleep
-
-import hashlib
+from queue import Queue
 import argparse
+
 
 from utils import BallotNum
 from utils import PriorityQueue
@@ -85,7 +85,23 @@ def connect():
 		except:
 			print("exception in sending to server", flush=True)
 
-	
+
+def process_user_input(event):
+	while True:
+		if event.is_set():
+			sleep(0.1)
+		else:
+			if(not input_queue.isEmpty()):
+				# Process the top request
+				# Check if we are the leader or know one
+
+					# If we are, begin phase two increment our request_num/index for log entry
+
+				# If we are not and know one, pass the post command to the leader
+				 
+				# Otherwise, begin leader election and/or repair ?
+				
+				pass
 
 def get_user_input():
 	while True:
@@ -116,10 +132,12 @@ def get_user_input():
 		elif user_input == 'queue':
 			pass
 		# ********** Application Commands **********
+		# If it is a application command and requires replication add it to our queue
 		elif user_input == 'post':
+			input_queue.put(user_input)
 			pass
-			# 
 		elif user_input == 'comment':
+			input_queue.put(user_input)
 			pass
 		elif user_input == 'blog':
 			pass
@@ -134,6 +152,76 @@ def get_user_input():
 				except:
 					print("exception in sending to server", flush=True)
 
+def handle_msg(data, raddr):
+	if data:
+		op, message = data.split('?/')
+
+		if op == 'Hi':
+			pass
+		# ********* Participant/Acceptor *********
+		elif op == 'PREPARE':
+			# The message contatins the ballot number
+			bal, req =  message.split('+/')
+			sequence_num, pid, depth = bal.split(',')
+			bal = BallotNum(pid, int(sequence_num), int(depth))
+			# Respond ONLY IF the ballot num of the proposer is of equal depth and newer(of a greater PID if equal time)
+			if (ballot_num <= bal) and (req_num < int(req)):
+				# Update our ballot_num
+				ballot_num = bal
+				req_num = int(req)
+				reply = 'PROMISE?/' + str(bal) + '+/' + str(accept_num) + '+/' + (accept_val) + '+/' + str(req_num)
+				try:
+					out_socks[pid][0].sendall(bytes(reply, "utf-8"))
+				except: 
+					print("exception in sending to proposer at", raddr, flush=True) 
+			
+		elif op == 'ACCEPT':
+			pass
+		elif op =='DECIDE':
+			pass
+		# ********* Proposer/Leader *********
+		elif op == 'PROMISE':
+			# Ensure a majority
+			promise_count[0] += 1
+			if (promise_count[0]) <= 3:
+				bal, b, val, req =  message.split('+/')
+				sequence_num, pid, depth = bal.split(',')
+				accept_sequence_num, accept_pid, accept_depth = b.split(',')
+				bal = BallotNum(pid, int(sequence_num), int(depth))
+				b = BallotNum(accept_pid, int(accept_sequence_num), int(accept_depth))
+				promise_msg = (bal, b, val, int(req))
+				# Only respond to messages with right ballot_num for the leader we know of 
+				if(bal == ballot_num):
+					accepted_promises.append(promise_msg)
+		elif op == 'ACCEPTED':
+			pass
+
+# Generic logic for phase II: Accept - Proposer
+def broadcast_accept():
+	if (promise_count[0]) >= 3:
+		# We have acheived a majority time to broadcast our accepted value
+		# Consume the accepted promises
+		# WE ARE ALSO NOW THE LEADER \(￣︶￣*\))
+		null_count = 0
+		accept_nums = []
+		for msg in accepted_promises:
+			accept_nums.append(msg[1])
+			if msg[2] != 'None' or msg[3] != req_num:
+				break
+			null_count += 1
+		if(null_count == 3):
+			# They have not seen anything different than what I have proposed
+			# The value that I want to propose is going to be the val I broadcast
+			accept_msg = 'ACCEPT ' + str(ballot_num) + '+/' + str('myVal') + '+/' + str(req_num)
+			for sockID, out_sock in out_socks.items():
+				try:
+					out_sock[0].sendall(bytes(accept_msg, "utf-8"))
+				except:
+					print("exception in sending to server", flush=True)
+		else:
+			# TODO: Get the max of the vals in the accepted_promises from the majority
+			pass
+
 
 def respond(conn, raddr):
 	
@@ -146,6 +234,7 @@ def respond(conn, raddr):
 			break
 		if not data:
 			# close connection to node
+			
 			conn.close()
 			try:
 				out_socks.pop(pid)
@@ -159,6 +248,11 @@ def respond(conn, raddr):
 			break
 
 		data = data.decode()
+		# Append the request to the queue and pop the newest message 
+		# spawn a new thread to handle message ? unsure how to not block receiving but still keeping track of all of the messages 
+		# so simulated network delay and message handling don't block receive
+		# threading.Thread(target=handle_msg, args=(data, raddr)).start()
+
 		print(data)
 		if data.startswith('Hi'):
 			pid = data[3:]
@@ -221,19 +315,35 @@ if __name__ == "__main__":
 	global missing_replies
 	missing_replies = [5]
 
+	timeout = 10
+
 	NONCE_STRING = '000' + '1'*253
 
 	# Server Blockchain
 	local_blog = BlogChain() # BlogChain(NONCE_STRING, 'backup/file/location.txt')
-	
-	# Server Ballot Number, contains local time and depth of our current blockchain
+
+	# Server Request Number
+	req_num = 0
+	# Server Ballot Number, most recent accepted ballotNum
+	# Only changes during leader election
 	ballot_num = BallotNum(PID)
+	# This should beat all processes at the start, not used for comparison
+	accept_num = BallotNum('P0')
+	# The transaction string that is accepted and to be comitted and attached  
+	accept_val = 'None'
 
 	# Server Request Queue
 	request_queue = PriorityQueue()
+	# Accepted Promises (for when node is the leader)
+	accepted_promises = []
+	promise_count = [0]
 
 	# start thread for user input
+	event = threading.Event()
+	input_queue = Queue()
+
 	threading.Thread(target=get_user_input).start()
+	threading.Thread(target=process_user_input, args=(event,)).start()
 	threading.Thread(target=connect).start()
 
 	# receive incoming connections
