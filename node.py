@@ -152,14 +152,15 @@ def handle_leader_tasks(event, request_queue):
 				else:
 					# We failed to reach a majority of ACCEPTED
 					# Fail and try again after some time?
+					accept_count[0] = 0
+					accepted_accepts.clear()
 					print('Accept Failed :()', flush=True)
-					pass
+					break
 			else:
 				# print('Leader queue is empty', flush=True)
 				sleep(0.1)
 
-				
-
+			
 
 def process_user_input(event, input_queue, request_queue):
 	global missing_replies
@@ -427,7 +428,7 @@ def handle_msg(data, conn, raddr):
 				bal, req =  message.split('+/')
 				sequence_num, pid, depth = bal.split(',')
 				bal = BallotNum(pid, int(sequence_num), int(depth))
-				# Respond ONLY IF the ballot num of the proposer is of equal depth and newer(of a greater PID if equal time)
+				# Respond ONLY IF the ballot num of the proposer is of equal depth and newer (of a greater PID if equal time)
 				if (ballot_num <= bal) and (req_num[0] <= int(req)):
 					# Update our ballot_num
 					ballot_num = bal
