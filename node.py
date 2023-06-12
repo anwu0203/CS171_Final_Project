@@ -85,7 +85,7 @@ def broadcast_accept(val):
 					out_sock[0].sendall(bytes(accept_msg, "utf-8"))
 					print("Sent:",accept_msg, flush=True)
 				except:
-					print("exception in sending to server", flush=True)
+					print("exception in sending accept to", sockID, flush=True)
 		else:
 			# TODO: Get the max of the vals in the accepted_promises from the majority
 			best_ballot = accept_nums[0]
@@ -100,7 +100,7 @@ def broadcast_accept(val):
 					out_sock[0].sendall(bytes(accept_msg, "utf-8"))
 					print("Sent:",accept_msg, flush=True)
 				except:
-					print("exception in sending to server", flush=True)
+					print("exception in sending accept to", sockID, flush=True)
 			pass				
 
 def handle_leader_tasks(event, request_queue):
@@ -144,6 +144,7 @@ def handle_leader_tasks(event, request_queue):
 				while((accept_count[0] < 3) and (time() < end)):
 					sleep(0.1)
 				# WE CAN DECIDE NOW WOOHOO
+				ballot_num.inc_depth()
 				local_blog.append(post_type, username, title, content, nonce)
 				if post_type == 'POST':
 					print(f'NEW POST {title} from {username}', flush=True)
@@ -166,8 +167,10 @@ def handle_leader_tasks(event, request_queue):
 				else:
 					# We failed to reach a majority of ACCEPTED
 					# Fail and try again after some time?
+					accept_count[0] = 0
+					accepted_accepts.clear()
 					print('Accept Failed :()', flush=True)
-					pass
+					break
 			else:
 				# print('Leader queue is empty', flush=True)
 				sleep(0.1)
@@ -266,6 +269,7 @@ def process_user_input(event, input_queue, request_queue):
 								
 								decide_msg = 'DECIDE' + '?/' + str(ballot_num) + '+/' + val_dict['propose_val'] + '+/' + str(req_num[0]) 
 								# insert to blogchain
+								ballot_num.inc_depth()
 								local_blog.append(post_type, username, title, content, nonce)
 								if post_type == 'POST':
 									print(f'NEW POST {title} from {username}', flush=True)
@@ -521,6 +525,7 @@ def handle_msg(data, conn, raddr):
 				elif op.startswith('comment'):
 					post_type = 'COMMENT'
 				nonce = local_blog.find_nonce(post_type, username, title, content)
+				ballot_num.inc_depth()
 				local_blog.append(post_type, username, title, content, nonce)
 				if post_type == 'POST':
 					print(f'NEW POST {title} from {username}', flush=True)
