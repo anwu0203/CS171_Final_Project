@@ -27,6 +27,7 @@ def connect():
 	global accept_num
 	global val_dict
 	global accepted_promises
+	global accepted_accepts
 	global promise_count
 	global accept_count
 	sleep(3)
@@ -60,6 +61,7 @@ def broadcast_accept(val):
 	global accept_num
 	global val_dict
 	global accepted_promises
+	global accepted_accepts
 	global promise_count
 	global accept_count
 	null_count = 1
@@ -77,7 +79,6 @@ def broadcast_accept(val):
 		if(null_count >= 3):
 			# They have not seen anything different than what I have proposed
 			# The value that I want to propose is going to be the val I broadcast
-			accepted_promises.clear()
 			accept_msg = 'ACCEPT?/' + str(ballot_num) + '+/' + val + '+/' + str(req_num[0])
 			for sockID, out_sock in out_socks.items():
 				try:
@@ -102,7 +103,7 @@ def broadcast_accept(val):
 					print("exception in sending to server", flush=True)
 			pass				
 
-def handle_leader_tasks(event):
+def handle_leader_tasks(event, request_queue):
 	global missing_replies
 	global out_socks
 	global in_socks
@@ -114,6 +115,7 @@ def handle_leader_tasks(event):
 	global accept_num
 	global val_dict
 	global accepted_promises
+	global accepted_accepts
 	global promise_count
 	global accept_count
 	while True:
@@ -122,7 +124,8 @@ def handle_leader_tasks(event):
 		# We are the leader and should consume from our request queue
 		else:
 			if(not request_queue.empty()):
-				op, val = request_queue.get().split('(').strip(')')
+				op, val = request_queue.get()[1].split('(')
+				val = val.strip(')')
 				# Compute nonce 
 				# Begin Phase II
 				broadcast_accept(val)
@@ -136,6 +139,8 @@ def handle_leader_tasks(event):
 				if accept_count[0] >= 3:
 					# Append the proposed block to the blockchain
 					# Apply the corresponding operation to its blog
+					accept_count[0] = 0
+					accepted_accepts.clear()
 					decide_msg = 'DECIDE' + '?/' + str(ballot_num) + '+/' + val + '+/' + str(req_num[0]) 
 					for sockID, out_sock in out_socks.items():
 						try:
@@ -147,12 +152,16 @@ def handle_leader_tasks(event):
 				else:
 					# We failed to reach a majority of ACCEPTED
 					# Fail and try again after some time?
+					print('Accept Failed :()', flush=True)
 					pass
+			else:
+				# print('Leader queue is empty', flush=True)
+				sleep(0.1)
 
 				
 
 
-def process_user_input(event):
+def process_user_input(event, input_queue, request_queue):
 	global missing_replies
 	global out_socks
 	global in_socks
@@ -164,6 +173,7 @@ def process_user_input(event):
 	global accept_num
 	global val_dict
 	global accepted_promises
+	global accepted_accepts
 	global promise_count
 	global accept_count
 	while True:
@@ -210,6 +220,8 @@ def process_user_input(event):
 							# Fail and try again after some time?
 							print('Accept Failed but we are the leader', flush=True)
 						else:
+							accept_count[0] = 0
+							accepted_accepts.clear()
 							# Append the proposed block to the blockchain
 							# Apply the corresponding operation to its blog
 							decide_msg = 'DECIDE' + '?/' + str(ballot_num) + '+/' + val_dict['propose_val'] + '+/' + str(req_num[0]) 
@@ -223,12 +235,15 @@ def process_user_input(event):
 				# Check if we are the leader 
 				elif LEADER[0] == PID:
 					# If we are, begin phase two increment our request_num/index for log entry
-					request_queue.put((req_num[0], input_queue.get()))
+					print("We are the leader, adding to queue!", flush=True)
+					req_num[0] += 1
+					request_queue.put((req_num[0], command))
 				# If we are not and know one, pass the post command to the leader
 				else:
+					print("Sending to leader!", flush=True)
 					try:
-						out_socks[LEADER[0]].out_sock[0].sendall(bytes(input_queue.get(), "utf-8"))
-						print("Sent:",input_queue.get(), flush=True)
+						out_socks[LEADER[0]][0].sendall(bytes(command, "utf-8"))
+						print("Sent:",command, flush=True)
 					except:
 						print("exception in sending to leader", flush=True)
 						# Let the election start again, by saying we know no leader
@@ -252,7 +267,7 @@ def process_user_input(event):
 		else:
 			sleep(0.1)
 
-def get_user_input():
+def get_user_input(input_queue):
 	global missing_replies
 	global out_socks
 	global in_socks
@@ -264,6 +279,7 @@ def get_user_input():
 	global accept_num
 	global val_dict
 	global accepted_promises
+	global accepted_accepts
 	global promise_count
 	global accept_count
 	while True:
@@ -277,6 +293,8 @@ def get_user_input():
 			_exit(0)
 		elif user_input == 'connect':
 			threading.Thread(target=connect).start()
+		elif user_input == 'leader':
+			print('Leader:', LEADER, flush=True)
 		elif user_input == 'print':
 			for sockID, out_sock in out_socks.items():
 				print(f'Outsock ID: {sockID} conn: {out_sock[0]} addr: {out_sock[1]}', flush=True)
@@ -331,10 +349,14 @@ def handle_msg(data, raddr):
 	global accept_num
 	global val_dict
 	global accepted_promises
+	global accepted_accepts
 	global promise_count
 	global accept_count
 	if data:
 		print("Processing:", data, flush=True)
+		if data.startswith('post') or data.startswith('comment'):
+			req_num[0] += 1
+			request_queue.put((req_num[0], data))
 		if (data.count('?/') > 0):
 			op, message = data.split('?/')
 
@@ -398,6 +420,7 @@ def handle_msg(data, raddr):
 					LEADER[0] = pid
 				if (ballot_num <= b)and (req_num[0] <= int(req)):
 					accept_num = b
+					req_num[0] = int(req)
 					val_dict['accept_val'] = v
 					reply = 'ACCEPTED?/' + str(b) + '+/' + str(v) + '+/' + str(req_num[0])
 					try:
@@ -436,12 +459,10 @@ def handle_msg(data, raddr):
 					accept_msg = (b, v, int(req))
 					# Only respond to messages with right ballot_num for the leader we know of 
 					if(b == ballot_num):
-						accepted_promises.append(accept_msg)
+						accepted_accepts.append(accept_msg)
 						accept_count[0] += 1
 					if(accept_count[0] == 3):
-						threading.Thread(target=handle_leader_tasks, args=(event,)).start()
-
-
+						threading.Thread(target=handle_leader_tasks, args=(event, request_queue)).start()
 
 
 def respond(conn, raddr):
@@ -500,9 +521,8 @@ if __name__ == "__main__":
 	global ballot_num
 	global accept_num
 	global val_dict
-	global request_queue
-	global input_queue
 	global accepted_promises
+	global accepted_accepts
 	global promise_count
 	global accept_count
 
@@ -554,14 +574,15 @@ if __name__ == "__main__":
 	request_queue = PriorityQueue()
 	# Accepted Promises (for when node is the leader)
 	accepted_promises = []
+	accepted_accepts = []
 	promise_count = [0]
 	accept_count = [0]
 	# start thread for user input
 	event = threading.Event()
 	input_queue = Queue()
 
-	threading.Thread(target=get_user_input).start()
-	threading.Thread(target=process_user_input, args=(event,)).start()
+	threading.Thread(target=get_user_input, args=(input_queue,)).start()
+	threading.Thread(target=process_user_input, args=(event, input_queue, request_queue)).start()
 	threading.Thread(target=connect).start()
 
 	# receive incoming connections

@@ -111,6 +111,10 @@ class BallotNum(LamportClock):
 			return self.get_time() <= right.get_time()
 		else:
 			return False
+	
+	def __eq__(self, right):
+		# Only going to respond if they are consistent nodes
+		return (self.get_depth() == right.get_depth()) and (self.get_time() == right.get_time()) and (self.get_pid() == right.get_pid())
 		
 		
 
