@@ -109,15 +109,13 @@ class BlogChain():
 		while cur_ptr != -1:
 			cur_post = self.chain[cur_ptr].get_post()
 			if (cur_post[0] == 'POST') and (cur_post[1] == username):
-				ret = "(" + cur_post[2] + ", " + cur_post[3] + ")" + ret
-				if cur_ptr > 0:
-					ret = ", " + ret
+				ret = ", (" + cur_post[2] + ", " + cur_post[3] + ")" + ret
 			cur_ptr = self.chain[cur_ptr].get_prev_ptr()
-		ret = "[" + ret
 		
-		if ret == "[]":
+		if ret == "]":
 			return "NO POST"
 		else:
+			ret = "[" + ret[2:]
 			return ret
 	
 	def get_post_content(self, title):
@@ -128,15 +126,13 @@ class BlogChain():
 		while cur_ptr != -1:
 			cur_post = self.chain[cur_ptr].get_post()
 			if cur_post[2] == title:
-				ret = "(" + cur_post[0] + ", " + cur_post[1] + ", " + cur_post[3] + ")" + ret
-				if cur_ptr > 0:
-					ret = ", " + ret
+				ret = ", (" + cur_post[0] + ", " + cur_post[1] + ", " + cur_post[3] + ")" + ret
 			cur_ptr = self.chain[cur_ptr].get_prev_ptr()
-		ret = "[" + ret
 		
-		if ret == "[]":
+		if ret == "]":
 			return "POST NOT FOUND"
 		else:
+			ret = "[" + ret[2:]
 			return ret
 	
 	def get_blogchain(self):
