@@ -142,9 +142,28 @@ def process_user_input(event):
 						input_queue.put(command)
 			else:
 				if command.startswith('failLink'):
-					pass
+					target = command[9:]
+					out_socks[target][0].close()
+					out_socks.pop(target)
 				elif command.startswith('fixLink'):
-					pass
+					target = command[8:]
+					try:
+						port = PORTS[target]
+					except:
+						print(f'Invalid target: {target}', flush=True)
+					try:
+						out_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+						out_sock.connect((IP, port))
+						raddr = out_sock.getpeername()
+						out_socks[target] = (out_sock, raddr)
+						print(f"connected to {raddr[1]}", flush=True)
+					except:
+						print("exception in trying to connect to server", flush=True)
+					sleep(0.1)
+					try:
+						out_sock[0].sendall(bytes('Hi ' + PID, "utf-8"))
+					except:
+						print("exception in sending to server", flush=True)
 				elif command.startswith('view'):
 					username = command[5:]
 					print(local_blog.get_user_posts(username), flush=True)
@@ -336,9 +355,10 @@ def respond(conn, raddr):
 		if not data:
 			# close connection to node
 			conn.close()
-			for sockID, out_sock in out_socks.items():
-				if out_sock[1] == raddr:
+			for sockID, in_sock in in_socks.items():
+				if in_sock[1] == raddr:
 					try:
+						out_socks[sockID][0].close()
 						out_socks.pop(sockID)
 					except:
 						print(f"exception in disconnecting from {raddr[1]}", flush=True)
