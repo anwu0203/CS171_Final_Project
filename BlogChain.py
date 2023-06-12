@@ -22,10 +22,48 @@ class Block():
 
 
 class BlogChain():
-	def __init__(self):
+	def __init__(self, backup_file_location = '/mnt/c/Users/jesus/Desktop/S23/CS171/pa03/CS171_Final_Project/saves/test_save.csv'):
 		self.chain = []
 		self.ptr = -1
 		self.GENESIS_HASH = "0" * 64
+		self.backup = backup_file_location
+		self.tentative_block = ((None), 0)
+		# Read the file from top to bottom (first transaction to last) 
+		# And replicate the blockchain last stored in the backup file
+		# By simply adding the transactions in order
+		try:
+			with open(self.backup, 'r') as f:
+				for block in f:
+					print(block)
+				pass
+		except FileNotFoundError:
+			# Backup file did not exist, check if folder location is valid and create a new file with that backup name
+			# If the folder location does not exist, fail gracefully?
+			print('The backup file provided does not exist')
+
+		# Once we have loaded our backup, make sure we can we append to it
+		# Backup file should exist but just in case
+		try:
+			self.backup_writer = open(self.backup, 'a')
+		except FileNotFoundError:
+			self.backup_writer = None
+			print('The backup file provided does not exist')
+		
+	def commit(self):
+		# Commit the block to memory, clear tentative block
+		if (self.backup_writer):
+			block, tentative_bit = self.tentative_block
+			if ((block) and (tentative_bit)):
+				save_block = (",".join([str(i) for i in block])) + '\n'
+				self.backup_writer.write(save_block)
+				self.tentative_block = ((None), 0)
+			return True
+		else:
+			return False
+	
+	def close(self):
+		self.backup_writer.close()
+		return
 	
 	def find_nonce(self, post_type, username, title, content):
 		# find valid nonce such that the sha256 hash begins with "000" given an input string
@@ -45,9 +83,10 @@ class BlogChain():
 			if (hash_val[0] == '0') or (hash_val[0] == '1'):
 				return nonce
 			nonce += 1
-	
+
 	def append(self, post_type, username, title, content, nonce):
 		# append post to the blockchain given post_type ('POST' or 'COMMENT'), username, title, content, and nonce
+		
 		if self.ptr == -1:
 			# create genesis block
 			block = Block(-1, self.GENESIS_HASH, post_type, username, title, content, nonce)
@@ -61,6 +100,8 @@ class BlogChain():
 			block = Block(self.ptr, prev_hash, post_type, username, title, content, nonce)
 			self.chain.append(block)
 			self.ptr += 1
+		
+		self.tentative_block = ((self.ptr+1, post_type, username, title, content, nonce), 1)
 	
 	def can_make_post(self, title):
 		# return True if can make post, and False if not
