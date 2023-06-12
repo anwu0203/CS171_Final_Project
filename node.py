@@ -251,19 +251,53 @@ def process_user_input(event, input_queue, request_queue):
 						input_queue.put(command)
 			else:
 				if command.startswith('failLink'):
-					pass
+					target = command[9:]
+					for sockID, out_sock in out_socks.items():
+						if target == sockID:
+							out_sock[0].close()
 				elif command.startswith('fixLink'):
-					pass
+					target = command[8:]
+					flag_linked = False
+					for sockID, out_sock in out_socks.items():
+						if target == sockID:
+							flag_linked = True
+							break
+					if not flag_linked:
+						try:
+							port = PORTS[target]
+						except:
+							print(f'Invalid target: {target}', flush=True)
+						try:
+							out_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+							out_sock.connect((IP, port))
+							raddr = out_sock.getpeername()
+							out_socks[target] = (out_sock, raddr)
+							print(f"connected to {raddr[1]}", flush=True)
+						except:
+							print("exception in trying to connect to server", flush=True)
+						sleep(1)
+						try:
+							out_sock.sendall(bytes('Hi?/' + PID, "utf-8"))
+						except:
+							print("exception in sending to server", flush=True)
 				elif command.startswith('view'):
-					pass
+					username = command[5:]
+					print(local_blog.get_user_posts(username), flush=True)
 				elif command.startswith('read'):
-					pass
+					title = command[5:]
+					print(local_blog.get_post_content(title), flush=True)
 				elif command == 'blockchain':
-					pass
+					print(local_blog.get_blogchain(), flush=True)
 				elif command == 'queue':
-					pass
+					print_q_flag = True
+					for op in list(request_queue.queue):
+						if print_q_flag:
+							print(op, end='', flush=True)
+							print_q_flag = False
+						else:
+							print(f', {op}', end='', flush=True)
 				elif command == 'blog':
-					pass
+					print(local_blog.get_all_posts(), flush=True)
 		else:
 			sleep(0.1)
 
@@ -306,9 +340,9 @@ def get_user_input(input_queue):
 				out_sock[0].close()
 			stdout.flush()
 			_exit(0)
-		elif user_input == 'failLink':
+		elif user_input.startswith('failLink'):
 			input_queue.put(user_input)
-		elif user_input == 'fixLink':
+		elif user_input.startswith('fixLink'):
 			input_queue.put(user_input)
 		elif user_input == 'blockchain':
 			input_queue.put(user_input)
@@ -318,13 +352,13 @@ def get_user_input(input_queue):
 		# If it is a application command and requires replication add it to our queue
 		elif user_input.startswith('post'):
 			input_queue.put(user_input)
-		elif user_input == 'comment':
+		elif user_input.startswith('comment'):
 			input_queue.put(user_input)
 		elif user_input == 'blog':
 			input_queue.put(user_input)
-		elif user_input == 'view':
+		elif user_input.startswith('view'):
 			input_queue.put(user_input)
-		elif user_input == 'read':
+		elif user_input.startswith('read'):
 			input_queue.put(user_input)
 		else:
 			# UNCOMMENT: to broadcast messages
@@ -337,7 +371,7 @@ def get_user_input(input_queue):
 					print("exception in sending to server", flush=True)
 		
 
-def handle_msg(data, raddr):
+def handle_msg(data, conn, raddr):
 	global missing_replies
 	global out_socks
 	global in_socks
@@ -383,11 +417,10 @@ def handle_msg(data, raddr):
 					except:
 						print("exception in trying to connect to server", flush=True)
 					sleep(1)
-					for sockID, out_sock in out_socks.items():
-						try:
-							out_sock[0].sendall(bytes('Hi?/' + PID, "utf-8"))
-						except:
-							print("exception in sending to server", flush=True)
+					try:
+						out_sock.sendall(bytes('Hi?/' + PID, "utf-8"))
+					except:
+						print("exception in sending to server", flush=True)
 			# ********* Participant/Acceptor *********
 			elif op == 'PREPARE':
 				# The message contatins the ballot number
@@ -489,9 +522,10 @@ def respond(conn, raddr):
 		if not data:
 			# close connection to node
 			conn.close()
-			for sockID, out_sock in in_socks.items():
-				if out_sock[1] == raddr:
+			for sockID, in_sock in in_socks.items():
+				if in_sock[1] == raddr:
 					try:
+						out_socks[sockID][0].close()
 						out_socks.pop(sockID)
 					except:
 						print(f"exception in disconnecting from {raddr[1]}", flush=True)
@@ -499,15 +533,16 @@ def respond(conn, raddr):
 						in_socks.pop(sockID)
 					except:
 						print(f"exception in disconnecting from {raddr[1]}", flush=True)
-				print(f"connection closed from {raddr[1]}", flush=True)
-				break
+					print(f"connection closed from {raddr[1]}", flush=True)
+					break
+			break
 
 		data = data.decode()
 		print(data, flush=True)
 		# Append the request to the queue and pop the newest message 
 		# spawn a new thread to handle message ? unsure how to not block receiving but still keeping track of all of the messages 
 		# so simulated network delay and message handling don't block receive
-		threading.Thread(target=handle_msg, args=(data, raddr)).start()
+		threading.Thread(target=handle_msg, args=(data, conn, raddr)).start()
 
 if __name__ == "__main__":
 
