@@ -13,7 +13,6 @@ import argparse
 
 
 from utils import BallotNum
-from utils import PriorityQueue
 from BlogChain import BlogChain
 
 def connect():
@@ -63,18 +62,19 @@ def broadcast_accept(val):
 	global accepted_promises
 	global promise_count
 	global accept_count
+	null_count = 1
+	accept_nums = []
 	if (promise_count[0]) >= 3:
 		# We have acheived a majority time to broadcast our accepted value
 		# Consume the accepted promises
 		# WE ARE ALSO NOW THE LEADER \(￣︶￣*\))
-		null_count = 0
-		accept_nums = []
+		print(accepted_promises, flush=True)
 		for msg in accepted_promises:
 			accept_nums.append(msg[1])
-			if (msg[2] != 'None') or (msg[3] <= req_num[0]):
+			if (msg[2] != 'None') and (msg[3] < req_num[0]):
 				break
 			null_count += 1
-		if(null_count == 3):
+		if(null_count >= 3):
 			# They have not seen anything different than what I have proposed
 			# The value that I want to propose is going to be the val I broadcast
 			accepted_promises.clear()
@@ -129,12 +129,14 @@ def handle_leader_tasks(event):
 				
 				start = time()
 				end = start + timeout
-				while((accept_count[0] < 3) or (time() < end)):
+				accept_count[0] += 1
+				while((accept_count[0] < 3) and (time() < end)):
 					sleep(0.1)
+				# WE CAN DECIDE NOW WOOHOO
 				if accept_count[0] >= 3:
 					# Append the proposed block to the blockchain
 					# Apply the corresponding operation to its blog
-					decide_msg = 'DECIDE' + '?/' + str(ballot_num) + '+/' + val
+					decide_msg = 'DECIDE' + '?/' + str(ballot_num) + '+/' + val + '+/' + str(req_num[0]) 
 					for sockID, out_sock in out_socks.items():
 						try:
 							out_sock[0].sendall(bytes(decide_msg, "utf-8"))
@@ -146,6 +148,9 @@ def handle_leader_tasks(event):
 					# We failed to reach a majority of ACCEPTED
 					# Fail and try again after some time?
 					pass
+
+				
+
 
 def process_user_input(event):
 	global missing_replies
@@ -174,7 +179,8 @@ def process_user_input(event):
 				if not LEADER:
 					ballot_num.inc_time()
 					val_dict['propose_val'] = command.split('(')[1].strip(')')
-					decide_msg = 'PREPARE' + '?/' + str(ballot_num) + '+/' + str(req_num[0])
+					decide_msg = 'PREPARE' + '?/' + str(ballot_num) + '+/' + str(req_num[0]) 
+					
 					start = time()
 					end = start + timeout
 					promise_count[0] += 1
@@ -184,23 +190,36 @@ def process_user_input(event):
 							print("Sent:",decide_msg, flush=True)
 						except:
 							print("exception in sending to server at", out_sock[1], flush=True)
-					while((promise_count[0] < 3) or (time() < end)):
+					while((promise_count[0] < 3) and (time() < end)):
 						print("waiting for promises",promise_count[0], end,  flush=True)
 						sleep(0.1)
 					if (promise_count[0]) < 3:
 						print('We not the leader :(', flush=True)
-						break
-					LEADER.append(PID)
-					broadcast_accept(val_dict['propose_val'])
-					start = time()
-					end = start + timeout
-					accept_count[0] += 1
-					while((accept_count[0] < 3) or (time() < end)):
-						print("waiting for accepted", flush=True)
-						sleep(0.1)
-					if accept_count[0] < 3:
-						print('Accept Failed but we are the leader', flush=True)
-					pass
+					else:
+						LEADER.append(PID)
+						
+						broadcast_accept(val_dict['propose_val'])
+						start = time()
+						end = start + timeout
+						accept_count[0] += 1
+						while((accept_count[0] < 3) and (time() < end)):
+							print("waiting for accepted", flush=True)
+							sleep(0.1)
+						if accept_count[0] < 3:
+							# We failed to reach a majority of ACCEPTED
+							# Fail and try again after some time?
+							print('Accept Failed but we are the leader', flush=True)
+						else:
+							# Append the proposed block to the blockchain
+							# Apply the corresponding operation to its blog
+							decide_msg = 'DECIDE' + '?/' + str(ballot_num) + '+/' + val_dict['propose_val'] + '+/' + str(req_num[0]) 
+							for sockID, out_sock in out_socks.items():
+								try:
+									out_sock[0].sendall(bytes(decide_msg, "utf-8"))
+									print("Sent:", decide_msg, flush=True)
+								except:
+									print("exception in sending to server at", out_sock[1], flush=True)
+
 				# Check if we are the leader 
 				elif LEADER[0] == PID:
 					# If we are, begin phase two increment our request_num/index for log entry
@@ -317,7 +336,6 @@ def handle_msg(data, raddr):
 	if data:
 		print("Processing:", data, flush=True)
 		if (data.count('?/') > 0):
-			print("We know this message", flush=True)
 			op, message = data.split('?/')
 
 			if op == 'Hi':
@@ -374,6 +392,10 @@ def handle_msg(data, raddr):
 				bal, v, req =  message.split('+/')
 				sequence_num, pid, depth = bal.split(',')
 				b = BallotNum(pid, int(sequence_num), int(depth))
+				if not LEADER:
+					LEADER.append(pid)
+				else:
+					LEADER[0] = pid
 				if (ballot_num <= b)and (req_num[0] <= int(req)):
 					accept_num = b
 					val_dict['accept_val'] = v
@@ -386,6 +408,8 @@ def handle_msg(data, raddr):
 				pass
 			elif op =='DECIDE':
 				# TODO: Commit the value in the decide message (we already saved it) to disk
+				bal, v, req =  message.split('+/')
+				print('I', PID, 'DECIDE:', v, flush=True)
 				pass
 			# ********* Proposer/Leader *********
 			elif op == 'PROMISE':
@@ -399,6 +423,7 @@ def handle_msg(data, raddr):
 					b = BallotNum(accept_pid, int(accept_sequence_num), int(accept_depth))
 					promise_msg = (bal, b, val, int(req))
 					# Only respond to messages with right ballot_num for the leader we know of 
+					print("\rProsposed ballot:", bal, flush=True)
 					if(bal == ballot_num):
 						accepted_promises.append(promise_msg)
 				promise_count[0] += 1
@@ -410,11 +435,11 @@ def handle_msg(data, raddr):
 					b = BallotNum(pid, int(sequence_num), int(depth))
 					accept_msg = (b, v, int(req))
 					# Only respond to messages with right ballot_num for the leader we know of 
-					if(bal == ballot_num):
+					if(b == ballot_num):
 						accepted_promises.append(accept_msg)
 						accept_count[0] += 1
 					if(accept_count[0] == 3):
-						threading.Thread(target=handle_leader_tasks, args=(event)).start()
+						threading.Thread(target=handle_leader_tasks, args=(event,)).start()
 
 
 
@@ -443,7 +468,7 @@ def respond(conn, raddr):
 		if not data:
 			# close connection to node
 			conn.close()
-			for sockID, out_sock in out_socks.items():
+			for sockID, out_sock in in_socks.items():
 				if out_sock[1] == raddr:
 					try:
 						out_socks.pop(sockID)
