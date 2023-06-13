@@ -106,7 +106,8 @@ def broadcast_accept(val):
 	else:
 		print("Not enough promises, we are not a leader :(", sockID, flush=True)
 		promise_count[0] = 0
-		LEADER.clear()				
+		LEADER.clear()
+		input_queue.put(val)				
 
 def handle_leader_tasks(event, request_queue):
 	global missing_replies
@@ -179,6 +180,7 @@ def handle_leader_tasks(event, request_queue):
 					accept_count[0] = 0
 					accepted_accepts.clear()
 					# Add it to our leader queue to get processed
+					req_num[0] += 1
 					request_queue.put(command)
 			else:
 				# print('Leader queue is empty', flush=True)
@@ -210,7 +212,7 @@ def process_user_input(event, input_queue, request_queue):
 		# else:
 		if(not input_queue.empty()):
 			# Process the top request
-			sleep(3)
+			# sleep(3)
 			command = input_queue.get()
 			# Check if we need to acheive consesnus to process the command
 			if command.startswith('post') or command.startswith('comment'):
@@ -254,7 +256,10 @@ def process_user_input(event, input_queue, request_queue):
 							LEADER.clear()	
 						else:
 							# We have become the leader
-							if LEADER[0] != PID:
+							if LEADER:
+								if LEADER[0] != PID:
+									LEADER[0] = PID
+							else:
 								LEADER.append(PID)
 							# find nonce
 							if command.startswith('post'):
@@ -284,6 +289,7 @@ def process_user_input(event, input_queue, request_queue):
 								accept_count[0] = 0
 								accepted_accepts.clear()
 								# Add it to our leader queue to get processed
+								req_num[0] += 1
 								request_queue.put(command)
 							else:
 								
@@ -324,13 +330,15 @@ def process_user_input(event, input_queue, request_queue):
 					else:
 						print("Sending to leader!", flush=True)
 						start_depth = accept_num.get_depth()
-						def hello(depth):
+						def hello(depth, ballot_num):
 							if(depth == accept_num.get_depth()):
 								print("TIMEOUT: Leader has not decided", flush=True)
 								# Let the election start again, by saying we know no leader
+								ballot_num = BallotNum(PID, ballot_num.get_time(), ballot_num.get_depth())
 								LEADER.clear()
+								promise_count[0] = 0
 								input_queue.put(command)
-						t = threading.Timer(10.0, hello, args=start_depth)
+						t = threading.Timer(10.0, hello, args=(start_depth,ballot_num))
 						t.start()  # after 30 seconds, "hello, world" will be printed
 						try:
 							out_socks[LEADER[0]][0].sendall(bytes(command, "utf-8"))
@@ -339,7 +347,9 @@ def process_user_input(event, input_queue, request_queue):
 							print("exception in sending to leader", flush=True)
 							# Let the election start again, by saying we know no leader
 							t.cancel()
+							ballot_num = BallotNum(PID, ballot_num.get_time(), ballot_num.get_depth())
 							LEADER.clear()
+							promise_count[0] = 0
 							input_queue.put(command)
 			else:
 				if command.startswith('failLink'):
@@ -416,6 +426,7 @@ def get_user_input(input_queue):
 			for sockID, out_sock in out_socks.items():
 				out_sock[0].close()
 			stdout.flush()
+			local_blog.close()
 			_exit(0)
 		elif user_input == 'connect':
 			threading.Thread(target=connect).start()
@@ -431,6 +442,7 @@ def get_user_input(input_queue):
 			for sockID, out_sock in out_socks.items():
 				out_sock[0].close()
 			stdout.flush()
+			local_blog.close()
 			_exit(0)
 		elif user_input.startswith('failLink'):
 			input_queue.put(user_input)
@@ -539,10 +551,12 @@ def handle_msg(data, conn, raddr):
 				bal, v, req =  message.split('+/')
 				sequence_num, pid, depth = bal.split(',')
 				b = BallotNum(pid, int(sequence_num), int(depth))
+
 				if not LEADER:
 					LEADER.append(pid)
 				else:
 					LEADER[0] = pid
+				
 				if (ballot_num <= b)and (req_num[0] <= int(req)):
 					accept_num = b
 					req_num[0] = int(req)
@@ -554,7 +568,7 @@ def handle_msg(data, conn, raddr):
 					except: 
 						print("exception in sending to proposer at", raddr, flush=True)
 					
-					op, val = val_dict['accept_val']
+					op, val = val_dict['accept_val'].split('(')
 					val = val.strip(')')
 					username, title, content = val.split(',')
 					if op.startswith('post'):
@@ -564,16 +578,16 @@ def handle_msg(data, conn, raddr):
 					nonce = local_blog.find_nonce(post_type, username, title, content)
 					ballot_num.inc_depth()
 					local_blog.append(post_type, username, title, content, nonce)
+					if post_type == 'POST':
+						print(f'NEW POST {title} from {username}', flush=True)
+					else:
+						print(f'NEW COMMENT on {title} from {username}', flush=True)
 				pass
 			elif op =='DECIDE':
 				# TODO: Commit the value in the decide message (we already saved it) to disk
 				bal, v, req =  message.split('+/')
 				print('I', PID, 'DECIDE:', v, flush=True)
 				local_blog.commit()
-				if post_type == 'POST':
-					print(f'NEW POST {title} from {username}', flush=True)
-				else:
-					print(f'NEW COMMENT on {title} from {username}', flush=True)
 # ********* Proposer/Leader *********
 			elif op == 'PROMISE':
 				# Ensure a majority
@@ -700,14 +714,16 @@ if __name__ == "__main__":
 	NONCE_STRING = '000' + '1'*253
 
 	# Server Blockchain
-	local_blog = BlogChain() # BlogChain(NONCE_STRING, 'backup/file/location.txt')
+	backup_file = '/mnt/c/Users/jesus/Desktop/S23/CS171/pa03/CS171_Final_Project/saves/test_save_' + str(PID) + '.csv'
+	local_blog = BlogChain(backup_file) # BlogChain(NONCE_STRING, 'backup/file/location.txt')
 
 	# Server Request Number
-	req_num = [0]
+	req_num = [int(local_blog.ptr)]
 	
 	# Server Ballot Number, most recent accepted ballotNum
 	# Only changes during leader election
 	ballot_num = BallotNum(PID)
+	ballot_num.set_depth(int(local_blog.ptr))
 	# This should beat all processes at the start, not used for comparison
 	accept_num = BallotNum('P0')
 	# The transaction string that is accepted and to be comitted and attached  

@@ -22,7 +22,7 @@ class Block():
 
 
 class BlogChain():
-	def __init__(self, backup_file_location = '/mnt/c/Users/jesus/Desktop/S23/CS171/pa03/CS171_Final_Project/saves/test_save.csv'):
+	def __init__(self, backup_file_location):
 		self.chain = []
 		self.ptr = -1
 		self.GENESIS_HASH = "0" * 64
@@ -32,9 +32,12 @@ class BlogChain():
 		# And replicate the blockchain last stored in the backup file
 		# By simply adding the transactions in order
 		try:
-			with open(self.backup, 'r') as f:
+			with open(self.backup, 'r+') as f:
 				for block in f:
-					print(block)
+					depth, post_type, username, title, content, nonce = block.strip('\n').split(',')
+					nonce = int(nonce)
+					self.append(post_type, username, title, content, nonce)
+					# print(block)
 				pass
 		except FileNotFoundError:
 			# Backup file did not exist, check if folder location is valid and create a new file with that backup name
@@ -44,7 +47,7 @@ class BlogChain():
 		# Once we have loaded our backup, make sure we can we append to it
 		# Backup file should exist but just in case
 		try:
-			self.backup_writer = open(self.backup, 'a')
+			self.backup_writer = open(self.backup, 'a+')
 		except FileNotFoundError:
 			self.backup_writer = None
 			print('The backup file provided does not exist')
@@ -55,6 +58,7 @@ class BlogChain():
 			block, tentative_bit = self.tentative_block
 			if ((block) and (tentative_bit)):
 				save_block = (",".join([str(i) for i in block])) + '\n'
+				print("WRITING TO DISK", save_block)
 				self.backup_writer.write(save_block)
 				self.tentative_block = ((None), 0)
 			return True

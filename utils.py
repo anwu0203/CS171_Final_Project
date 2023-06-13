@@ -89,6 +89,9 @@ class BallotNum(LamportClock):
 	def get_depth(self):
 		return self.depth
 	
+	def set_depth(self, d):
+		self.depth = d
+	
 	def __str__(self):
 		return f'{self.time},{self.pid},{self.depth}'
 
@@ -107,12 +110,14 @@ class BallotNum(LamportClock):
 	
 	def __le__(self, right):
 		# Only going to respond if they are consistent nodes
-		if self.get_depth() == right.get_depth():
-			# return self.get_time() <= right.get_time()
-			if self.get_time() != right.get_time():
-				return self.get_time() <= right.get_time()
-			elif self.get_pid() != right.get_pid():
-				return self.get_pid() <= right.get_pid()
+		if self.get_depth() <= right.get_depth():
+			if self.get_pid() == right.get_pid():
+				return (self.get_time() <= right.get_time()) 
+			else:
+				if self.get_time() != right.get_time():
+					return self.get_time() <= right.get_time()
+				elif self.get_pid() != right.get_pid():
+					return self.get_pid() <= right.get_pid()
 		else:
 			return False
 	
