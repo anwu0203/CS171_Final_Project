@@ -743,7 +743,7 @@ if __name__ == "__main__":
 	NONCE_STRING = '000' + '1'*253
 
 	# Server Blockchain
-	backup_file = '/mnt/c/Users/jesus/Desktop/S23/CS171/pa03/CS171_Final_Project/saves/test_save_' + str(PID) + '.csv'
+	backup_file = '/mnt/c/Users/anwu0/CS171/CS171_Final_Project/saves/test_save_' + str(PID) + '.csv'
 	local_blog = BlogChain(backup_file) # BlogChain(NONCE_STRING, 'backup/file/location.txt')
 
 	# Server Request Number
