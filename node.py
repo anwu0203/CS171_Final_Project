@@ -141,57 +141,74 @@ def handle_leader_tasks(event, request_queue):
 		# We are the leader and should consume from our request queue
 		else:
 			if(not request_queue.empty()):
-				req, command = request_queue.get()
+				req, command, conn = request_queue.get()
 				op, val = command.split('(')
 				val = val.strip(')')
 				username, title, content = val.split(',')
-
-				# find nonce
+				flag_can_make = False
 				if op.startswith('post'):
 					post_type = 'POST'
-				elif op.startswith('comment'):
-					post_type = 'COMMENT'
-				nonce = local_blog.find_nonce(post_type, username, title, content)
-				# Begin Phase II
-				broadcast_accept(command)
-				
-				start = time()
-				end = start + timeout
-				accept_count[0] += 1
-				while((accept_count[0] < 3) and (time() < end)):
-					sleep(0.1)
-				# WE CAN DECIDE NOW WOOHO
-				if accept_count[0] >= 3:
-					# Append the proposed block to the blockchain
-					# Apply the corresponding operation to its blog
-					decide_msg = 'DECIDE' + '?/' + str(ballot_num) + '+/' + command + '+/' + str(req_num[0]) 
-					for sockID, out_sock in out_socks.items():
-						try:
-							out_sock[0].sendall(bytes(decide_msg, "utf-8"))
-							print("Sent:",decide_msg, flush=True)
-						except:
-							print("exception in sending to server at", out_sock[1], flush=True)
-					accept_count[0] = 0
-					accepted_accepts.clear()
-					# insert to blogchain
-					local_blog.append(post_type, username, title, content, nonce)
-					local_blog.commit()
-					ballot_num.inc_depth()
-					if post_type == 'POST':
-						print(f'NEW POST {title} from {username}', flush=True)
-					else:
-						print(f'NEW COMMENT on {title} from {username}', flush=True)
+					fail_msg = 'DUPLICATE TITLE'
+					if local_blog.can_make_post(title):
+						flag_can_make = True
 				else:
-					# We failed to reach a majority of ACCEPTED
-					# Fail and try again after some time?
-					print('TIMEOUT: Accept Failed, we are no longer the leader', flush=True)
-					fail_timeout = randint(1, 10)
-					sleep(fail_timeout)
-					accept_count[0] = 0
-					accepted_accepts.clear()
-					# Add it to our leader queue to get processed
-					req_num[0] += 1
-					request_queue.put((req_num[0], command))
+					post_type = 'COMMENT'
+					fail_msg = 'CANNOT COMMENT'
+					if local_blog.can_make_comment(title):
+						flag_can_make = True
+
+				if not flag_can_make:
+					if conn == None:
+						print(fail_msg, flush=True)
+					else:
+						try:
+							conn.sendall(bytes(fail_msg, "utf-8"))
+							print("Sent:",fail_msg, flush=True)
+						except:
+							print(f"exception in sending {fail_msg} to client", flush=True)
+				else:
+					# find nonce
+					nonce = local_blog.find_nonce(post_type, username, title, content)
+					# Begin Phase II
+					broadcast_accept(command)
+					
+					start = time()
+					end = start + timeout
+					accept_count[0] += 1
+					while((accept_count[0] < 3) and (time() < end)):
+						sleep(0.1)
+					# WE CAN DECIDE NOW WOOHO
+					if accept_count[0] >= 3:
+						# Append the proposed block to the blockchain
+						# Apply the corresponding operation to its blog
+						decide_msg = 'DECIDE' + '?/' + str(ballot_num) + '+/' + command + '+/' + str(req_num[0]) 
+						for sockID, out_sock in out_socks.items():
+							try:
+								out_sock[0].sendall(bytes(decide_msg, "utf-8"))
+								print("Sent:",decide_msg, flush=True)
+							except:
+								print("exception in sending to server at", out_sock[1], flush=True)
+						accept_count[0] = 0
+						accepted_accepts.clear()
+						# insert to blogchain
+						local_blog.append(post_type, username, title, content, nonce)
+						local_blog.commit()
+						ballot_num.inc_depth()
+						if post_type == 'POST':
+							print(f'NEW POST {title} from {username}', flush=True)
+						else:
+							print(f'NEW COMMENT on {title} from {username}', flush=True)
+					else:
+						# We failed to reach a majority of ACCEPTED
+						# Fail and try again after some time?
+						print('TIMEOUT: Accept Failed, we are no longer the leader', flush=True)
+						fail_timeout = randint(1, 10)
+						sleep(fail_timeout)
+						accept_count[0] = 0
+						accepted_accepts.clear()
+						# Add it to our leader queue to get processed
+						req_num[0] += 1
+						request_queue.put((req_num[0], command, None))
 			else:
 				# print('Leader queue is empty', flush=True)
 				sleep(0.1)
@@ -230,144 +247,132 @@ def process_user_input(event, input_queue, request_queue):
 				op, val = command.split('(')
 				val = val.strip(')')
 				username, title, content = val.split(',')
-				flag_can_make = False
-				if command.startswith('post'):
-					if not local_blog.can_make_post(title):
-						print('DUPLICATE TITLE', flush=True)
-					else:
-						flag_can_make = True
-				else:
-					if not local_blog.can_make_comment(title):
-						print('CANNOT COMMENT', flush=True)
-					else:
-						flag_can_make = True
 				# Otherwise, begin leader election and/or repair ?
-				if flag_can_make:
-					if not LEADER:
-						ballot_num.inc_time()
-						# if(req_num[0] != 0):
-						# 	req_num[0] += 1
-						val_dict['propose_val'] = command #command.split('(')[1].strip(')')
-						decide_msg = 'PREPARE' + '?/' + str(ballot_num) + '+/' + str(req_num[0]) 
+				if not LEADER:
+					ballot_num.inc_time()
+					# if(req_num[0] != 0):
+					# 	req_num[0] += 1
+					val_dict['propose_val'] = command #command.split('(')[1].strip(')')
+					decide_msg = 'PREPARE' + '?/' + str(ballot_num) + '+/' + str(req_num[0]) 
+					
+					start = time()
+					end = start + timeout
+					promise_count[0] += 1
+					for sockID, out_sock in out_socks.items():
+						try:
+							out_sock[0].sendall(bytes(decide_msg, "utf-8"))
+							print("Sent:",decide_msg, flush=True)
+						except:
+							print("exception in sending to server at", out_sock[1], flush=True)
+					while((promise_count[0] < 3) and (time() < end)):
+						print("waiting for promises",promise_count[0], end,  flush=True)
+						sleep(0.1)
+					if (promise_count[0]) < 3:
+						print("TIMEOUT: Not enough promises, we are not a leader :(", sockID, flush=True)
+						promise_count[0] = 0
+						accepted_promises.clear()
+						if LEADER:
+							if LEADER[0] == PID:
+								LEADER.clear()
+						input_queue.put(command)
+				
+					else:
+						# We have become the leader
+						if LEADER:
+							if LEADER[0] != PID:
+								LEADER[0] = PID
+						else:
+							LEADER.append(PID)
+						# find nonce
+						if command.startswith('post'):
+							post_type = 'POST'
+						elif command.startswith('comment'):
+							post_type = 'COMMENT'
+						op, val = command.split('(')
+						val = val.strip(')')
+						username, title, content = val.split(',')
+						nonce = local_blog.find_nonce(post_type, username, title, content)
+
+						broadcast_accept(val_dict['propose_val'])
 						
 						start = time()
 						end = start + timeout
-						promise_count[0] += 1
-						for sockID, out_sock in out_socks.items():
-							try:
-								out_sock[0].sendall(bytes(decide_msg, "utf-8"))
-								print("Sent:",decide_msg, flush=True)
-							except:
-								print("exception in sending to server at", out_sock[1], flush=True)
-						while((promise_count[0] < 3) and (time() < end)):
-							print("waiting for promises",promise_count[0], end,  flush=True)
+						accept_count[0] += 1
+						while((accept_count[0] < 3) and (time() < end)):
+							print("waiting for accepted", flush=True)
 							sleep(0.1)
-						if (promise_count[0]) < 3:
+						if accept_count[0] < 3:
+							# We failed to reach a majority of ACCEPTED
+							# Fail and try again after some time?
 							print("TIMEOUT: Not enough promises, we are not a leader :(", sockID, flush=True)
 							promise_count[0] = 0
 							accepted_promises.clear()
 							if LEADER:
 								if LEADER[0] == PID:
 									LEADER.clear()
-							input_queue.put(command)
-					
+							# input_queue.put(command)
+							accept_count[0] = 0
+							accepted_accepts.clear()
 						else:
-							# We have become the leader
-							if LEADER:
-								if LEADER[0] != PID:
-									LEADER[0] = PID
-							else:
-								LEADER.append(PID)
-							# find nonce
-							if command.startswith('post'):
-								post_type = 'POST'
-							elif command.startswith('comment'):
-								post_type = 'COMMENT'
-							op, val = command.split('(')
-							val = val.strip(')')
-							username, title, content = val.split(',')
-							nonce = local_blog.find_nonce(post_type, username, title, content)
-
-							broadcast_accept(val_dict['propose_val'])
+							# Append the proposed block to the blockchain
+							# Apply the corresponding operation to its blog
+							# WE ARE THE LEADER AND MULTI-PAXOS BEGINS
+							# insert to blogchain
+							local_blog.append(post_type, username, title, content, nonce)
 							
-							start = time()
-							end = start + timeout
-							accept_count[0] += 1
-							while((accept_count[0] < 3) and (time() < end)):
-								print("waiting for accepted", flush=True)
-								sleep(0.1)
-							if accept_count[0] < 3:
-								# We failed to reach a majority of ACCEPTED
-								# Fail and try again after some time?
-								print("TIMEOUT: Not enough promises, we are not a leader :(", sockID, flush=True)
-								promise_count[0] = 0
-								accepted_promises.clear()
-								if LEADER:
-									if LEADER[0] == PID:
-										LEADER.clear()
-								input_queue.put(command)
-								accept_count[0] = 0
-								accepted_accepts.clear()
+							if post_type == 'POST':
+								print(f'NEW POST {title} from {username}', flush=True)
 							else:
-								# Append the proposed block to the blockchain
-								# Apply the corresponding operation to its blog
-								# WE ARE THE LEADER AND MULTI-PAXOS BEGINS
-								# insert to blogchain
-								local_blog.append(post_type, username, title, content, nonce)
-								
-								if post_type == 'POST':
-									print(f'NEW POST {title} from {username}', flush=True)
-								else:
-									print(f'NEW COMMENT on {title} from {username}', flush=True)
-								if(accept_count[0] >= 3 and (not leader_thread)):
-									leader_thread = threading.Thread(target=handle_leader_tasks, args=(event, request_queue)).start()
-								
-								decide_msg = 'DECIDE' + '?/' + str(ballot_num) + '+/' + val_dict['propose_val'] + '+/' + str(req_num[0]) 
-								
-								for sockID, out_sock in out_socks.items():
-									try:
-										out_sock[0].sendall(bytes(decide_msg, "utf-8"))
-										print("Sent:", decide_msg, flush=True)
-									except:
-										print("exception in sending to server at", out_sock[1], flush=True)
-								# Clear for our next rounds of accepts
-								local_blog.commit()
-								ballot_num.inc_depth()
-								accept_count[0] = 0
-								accepted_accepts.clear()
-								
-								
-					# Check if we are the leader 
-					elif LEADER[0] == PID:
-						# If we are, begin phase two increment our request_num/index for log entry
-						print("We are the leader, adding to queue!", flush=True)
-						req_num[0] += 1
-						request_queue.put((req_num[0], command))
-					# If we are not and know one, pass the post command to the leader
-					else:
-						print("Sending to leader!", flush=True)
-						start_depth = accept_num.get_depth()
-						def hello(depth, ballot_num):
-							if(depth == accept_num.get_depth()):
-								print("TIMEOUT: Leader has not decided", flush=True)
-								# Let the election start again, by saying we know no leader
-								ballot_num = BallotNum(PID, ballot_num.get_time(), ballot_num.get_depth())
-								LEADER.clear()
-								promise_count[0] = 0
-								input_queue.put(command)
-						t = threading.Timer(10.0, hello, args=(start_depth,ballot_num))
-						t.start()  # after 30 seconds, "hello, world" will be printed
-						try:
-							out_socks[LEADER[0]][0].sendall(bytes(command, "utf-8"))
-							print("Sent:",command, flush=True)
-						except:
-							print("exception in sending to leader", flush=True)
+								print(f'NEW COMMENT on {title} from {username}', flush=True)
+							if(accept_count[0] >= 3 and (not leader_thread)):
+								leader_thread = threading.Thread(target=handle_leader_tasks, args=(event, request_queue)).start()
+							
+							decide_msg = 'DECIDE' + '?/' + str(ballot_num) + '+/' + val_dict['propose_val'] + '+/' + str(req_num[0]) 
+							
+							for sockID, out_sock in out_socks.items():
+								try:
+									out_sock[0].sendall(bytes(decide_msg, "utf-8"))
+									print("Sent:", decide_msg, flush=True)
+								except:
+									print("exception in sending to server at", out_sock[1], flush=True)
+							# Clear for our next rounds of accepts
+							local_blog.commit()
+							ballot_num.inc_depth()
+							accept_count[0] = 0
+							accepted_accepts.clear()
+							
+							
+				# Check if we are the leader 
+				elif LEADER[0] == PID:
+					# If we are, begin phase two increment our request_num/index for log entry
+					print("We are the leader, adding to queue!", flush=True)
+					req_num[0] += 1
+					request_queue.put((req_num[0], command, None))
+				# If we are not and know one, pass the post command to the leader
+				else:
+					print("Sending to leader!", flush=True)
+					start_depth = accept_num.get_depth()
+					def hello(depth, ballot_num):
+						if(depth == accept_num.get_depth()):
+							print("TIMEOUT: Leader has not decided", flush=True)
 							# Let the election start again, by saying we know no leader
-							t.cancel()
 							ballot_num = BallotNum(PID, ballot_num.get_time(), ballot_num.get_depth())
 							LEADER.clear()
 							promise_count[0] = 0
 							input_queue.put(command)
+					t = threading.Timer(10.0, hello, args=(start_depth,ballot_num))
+					t.start()  # after 30 seconds, "hello, world" will be printed
+					try:
+						out_socks[LEADER[0]][0].sendall(bytes(command, "utf-8"))
+						print("Sent:",command, flush=True)
+					except:
+						print("exception in sending to leader", flush=True)
+						# Let the election start again, by saying we know no leader
+						t.cancel()
+						ballot_num = BallotNum(PID, ballot_num.get_time(), ballot_num.get_depth())
+						LEADER.clear()
+						promise_count[0] = 0
+						input_queue.put(command)
 			else:
 				if command.startswith('failLink'):
 					target = command[9:]
@@ -511,7 +516,9 @@ def handle_msg(data, conn, raddr):
 		print("Processing:", data, flush=True)
 		if data.startswith('post') or data.startswith('comment'):
 			req_num[0] += 1
-			request_queue.put((req_num[0], data))
+			request_queue.put((req_num[0], data, conn))
+		if data.startswith('DUPLICATE TITLE') or data.startswith('CANNOT COMMENT'):
+			print(data, flush=True)
 		if (data.count('?/') > 0):
 			op, message = data.split('?/')
 
@@ -743,7 +750,7 @@ if __name__ == "__main__":
 	NONCE_STRING = '000' + '1'*253
 
 	# Server Blockchain
-	backup_file = '/mnt/c/Users/jesus/Desktop/S23/CS171/pa03/CS171_Final_Project/saves/test_save_' + str(PID) + '.csv'
+	backup_file = '/mnt/c/Users/anwu0/CS171/CS171_Final_Project/saves/test_save_' + str(PID) + '.csv'
 	local_blog = BlogChain(backup_file) # BlogChain(NONCE_STRING, 'backup/file/location.txt')
 
 	# Server Request Number
