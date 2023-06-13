@@ -305,7 +305,7 @@ def process_user_input(event, input_queue, request_queue):
 								if LEADER:
 									if LEADER[0] == PID:
 										LEADER.clear()
-								input_queue.put(command)
+								# input_queue.put(command)
 								accept_count[0] = 0
 								accepted_accepts.clear()
 							else:
