@@ -163,8 +163,10 @@ def handle_leader_tasks(event, request_queue):
 							print("exception in sending to server at", out_sock[1], flush=True)
 					accept_count[0] = 0
 					accepted_accepts.clear()
-					
+					# insert to blogchain
+					local_blog.append(post_type, username, title, content, nonce)
 					local_blog.commit()
+					ballot_num.inc_depth()
 					if post_type == 'POST':
 						print(f'NEW POST {title} from {username}', flush=True)
 					else:
@@ -172,11 +174,9 @@ def handle_leader_tasks(event, request_queue):
 				else:
 					# We failed to reach a majority of ACCEPTED
 					# Fail and try again after some time?
-					print('TIMEOUT: Accept Failed but we are the leader', flush=True)
+					print('TIMEOUT: Accept Failed, we are no longer the leader', flush=True)
 					fail_timeout = randint(1, 10)
 					sleep(fail_timeout)
-					if(accept_count[0] >= 3 and (not leader_thread)):
-						leader_thread = threading.Thread(target=handle_leader_tasks, args=(event, request_queue)).start()
 					accept_count[0] = 0
 					accepted_accepts.clear()
 					# Add it to our leader queue to get processed
@@ -276,7 +276,7 @@ def process_user_input(event, input_queue, request_queue):
 							broadcast_accept(val_dict['propose_val'])
 							# insert to blogchain
 							local_blog.append(post_type, username, title, content, nonce)
-							ballot_num.inc_depth()
+							
 							
 							if post_type == 'POST':
 								print(f'NEW POST {title} from {username}', flush=True)
@@ -319,6 +319,7 @@ def process_user_input(event, input_queue, request_queue):
 										print("exception in sending to server at", out_sock[1], flush=True)
 								# Clear for our next rounds of accepts
 								local_blog.commit()
+								ballot_num.inc_depth()
 								accept_count[0] = 0
 								accepted_accepts.clear()
 								
@@ -556,11 +557,21 @@ def handle_msg(data, conn, raddr):
 				b = BallotNum(pid, int(sequence_num), int(depth))
 
 				if not LEADER:
-					LEADER.append(pid)
+					if (req_num[0] < int(req)):
+						LEADER.append(pid)
+						accept_num = b
+						req_num[0] = int(req)
+						val_dict['accept_val'] = v
+						reply = 'ACCEPTED?/' + str(b) + '+/' + str(v) + '+/' + str(req_num[0])
+						try:
+							out_socks[pid][0].sendall(bytes(reply, "utf-8"))
+							print("Sent:", reply, flush=True)
+						except: 
+							print("exception in sending to proposer at", raddr, flush=True)
 				else:
 					LEADER[0] = pid
 				
-				if (ballot_num <= b) and (req_num[0] <= int(req)):
+				if (ballot_num <= b) and (req_num[0] < int(req)):
 					accept_num = b
 					req_num[0] = int(req)
 					val_dict['accept_val'] = v
@@ -570,26 +581,24 @@ def handle_msg(data, conn, raddr):
 						print("Sent:", reply, flush=True)
 					except: 
 						print("exception in sending to proposer at", raddr, flush=True)
-					
-					op, val = val_dict['accept_val'].split('(')
-					val = val.strip(')')
-					username, title, content = val.split(',')
-					if op.startswith('post'):
-						post_type = 'POST'
-					elif op.startswith('comment'):
-						post_type = 'COMMENT'
-					nonce = local_blog.find_nonce(post_type, username, title, content)
-					ballot_num.inc_depth()
-					local_blog.append(post_type, username, title, content, nonce)
-					if post_type == 'POST':
-						print(f'NEW POST {title} from {username}', flush=True)
-					else:
-						print(f'NEW COMMENT on {title} from {username}', flush=True)
-				pass
 			elif op =='DECIDE':
 				# TODO: Commit the value in the decide message (we already saved it) to disk
 				bal, v, req =  message.split('+/')
 				print('I', PID, 'DECIDE:', v, flush=True)
+				op, val = val_dict['accept_val'].split('(')
+				val = val.strip(')')
+				username, title, content = val.split(',')
+				if op.startswith('post'):
+					post_type = 'POST'
+				elif op.startswith('comment'):
+					post_type = 'COMMENT'
+				nonce = local_blog.find_nonce(post_type, username, title, content)
+				
+				local_blog.append(post_type, username, title, content, nonce)
+				if post_type == 'POST':
+					print(f'NEW POST {title} from {username}', flush=True)
+				else:
+					print(f'NEW COMMENT on {title} from {username}', flush=True)
 				local_blog.commit()
 # ********* Proposer/Leader *********
 			elif op == 'PROMISE':
@@ -618,6 +627,8 @@ def handle_msg(data, conn, raddr):
 					if(b == ballot_num):
 						accepted_accepts.append(accept_msg)
 						accept_count[0] += 1
+					else:
+						print('we did not accept this accepted', b, ballot_num, flush=True)
 					
 
 
