@@ -58,7 +58,7 @@ class BlogChain():
 			block, tentative_bit = self.tentative_block
 			if ((block) and (tentative_bit)):
 				save_block = (",".join([str(i) for i in block])) + '\n'
-				print("WRITING TO DISK", save_block)
+				print(f"WRITING TO DISK: {save_block}", end='')
 				self.backup_writer.write(save_block)
 				self.tentative_block = ((None), 0)
 			return True

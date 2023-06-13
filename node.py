@@ -71,11 +71,11 @@ def broadcast_accept(val):
 		# We have acheived a majority time to broadcast our accepted value
 		# Consume the accepted promises
 		# WE ARE ALSO NOW THE LEADER \(￣︶￣*\))
-		print(accepted_promises, flush=True)
+		# print(accepted_promises, flush=True)
 		for msg in accepted_promises:
 			accept_nums.append(msg[1])
 			if (msg[2] != 'None') and (msg[3] <= req_num[0]):
-				print('Non null message or ')
+				# print('Non null message or ')
 				break
 			null_count += 1
 		if(null_count >= 3):
@@ -108,12 +108,12 @@ def broadcast_accept(val):
 			else:
 				# We are not the 
 				if LEADER != PID:
-					print('We might not be the leader :()', flush=True)
+					# print('We might not be the leader :()', flush=True)
 					promise_count[0] = 0
 					input_queue.put(val)	
 				
 	else:
-		print("Not enough promises, we are not a leader :(", flush=True)
+		# print("Not enough promises, we are not a leader :(", flush=True)
 		promise_count[0] = 0
 		if LEADER:
 			if LEADER[0] == PID:
@@ -184,7 +184,7 @@ def handle_leader_tasks(event, request_queue):
 				else:
 					# We failed to reach a majority of ACCEPTED
 					# Fail and try again after some time?
-					print('TIMEOUT: Accept Failed, we are no longer the leader', flush=True)
+					print('TIMEOUT: Accept Failed', flush=True)
 					fail_timeout = randint(1, 10)
 					sleep(fail_timeout)
 					accept_count[0] = 0
@@ -260,10 +260,10 @@ def process_user_input(event, input_queue, request_queue):
 							except:
 								print("exception in sending to server at", out_sock[1], flush=True)
 						while((promise_count[0] < 3) and (time() < end)):
-							print("waiting for promises",promise_count[0], end,  flush=True)
+							# print("waiting for promises",promise_count[0], end,  flush=True)
 							sleep(0.1)
 						if (promise_count[0]) < 3:
-							print("TIMEOUT: Not enough promises, we are not a leader :(", sockID, flush=True)
+							print("TIMEOUT: Not enough promises", sockID, flush=True)
 							promise_count[0] = 0
 							accepted_promises.clear()
 							if LEADER:
@@ -294,12 +294,12 @@ def process_user_input(event, input_queue, request_queue):
 							end = start + timeout
 							accept_count[0] += 1
 							while((accept_count[0] < 3) and (time() < end)):
-								print("waiting for accepted", flush=True)
+								# print("waiting for accepted", flush=True)
 								sleep(0.1)
 							if accept_count[0] < 3:
 								# We failed to reach a majority of ACCEPTED
 								# Fail and try again after some time?
-								print("TIMEOUT: Not enough promises, we are not a leader :(", sockID, flush=True)
+								print("TIMEOUT: Not enough promises", sockID, flush=True)
 								promise_count[0] = 0
 								accepted_promises.clear()
 								if LEADER:
@@ -340,12 +340,12 @@ def process_user_input(event, input_queue, request_queue):
 					# Check if we are the leader 
 					elif LEADER[0] == PID:
 						# If we are, begin phase two increment our request_num/index for log entry
-						print("We are the leader, adding to queue!", flush=True)
+						print("Added request to queue", flush=True)
 						req_num[0] += 1
 						request_queue.put((req_num[0], command))
 					# If we are not and know one, pass the post command to the leader
 					else:
-						print("Sending to leader!", flush=True)
+						print("Sent request to leader", flush=True)
 						start_depth = accept_num.get_depth()
 						def hello(depth, ballot_num):
 							if(depth == accept_num.get_depth()):
@@ -481,15 +481,15 @@ def get_user_input(input_queue):
 			input_queue.put(user_input)
 		elif user_input.startswith('read'):
 			input_queue.put(user_input)
-		else:
-			# UNCOMMENT: to broadcast messages
+		# else:
+		# 	# UNCOMMENT: to broadcast messages
 
-			for sockID, out_sock in out_socks.items():
-				try:
-					out_sock[0].sendall(bytes(user_input, "utf-8"))
-					print("Sent:",user_input, flush=True)
-				except:
-					print("exception in sending to server", flush=True)
+		# 	for sockID, out_sock in out_socks.items():
+		# 		try:
+		# 			out_sock[0].sendall(bytes(user_input, "utf-8"))
+		# 			print("Sent:",user_input, flush=True)
+		# 		except:
+		# 			print("exception in sending to server", flush=True)
 		
 
 def handle_msg(data, conn, raddr):
@@ -508,7 +508,7 @@ def handle_msg(data, conn, raddr):
 	global promise_count
 	global accept_count
 	if data:
-		print("Processing:", data, flush=True)
+		# print("Processing:", data, flush=True)
 		if data.startswith('post') or data.startswith('comment'):
 			req_num[0] += 1
 			request_queue.put((req_num[0], data))
@@ -526,9 +526,9 @@ def handle_msg(data, conn, raddr):
 				sleep(0.3)
 				try:
 					out_socks[pid][0].sendall(bytes("connection check", "utf-8"))
-					print("check success", flush=True)
+					# print("check success", flush=True)
 				except:
-					print(f"check failed {pid}, {port}", flush=True)
+					# print(f"check failed {pid}, {port}", flush=True)
 					try:
 						out_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 						out_sock.connect((IP, port))
@@ -596,7 +596,7 @@ def handle_msg(data, conn, raddr):
 			elif op =='DECIDE':
 				# TODO: Commit the value in the decide message (we already saved it) to disk
 				bal, v, req =  message.split('+/')
-				print('I', PID, 'DECIDE:', v, flush=True)
+				print('DECIDED:', v, flush=True)
 				op, val = v.split('(')
 				val = val.strip(')')
 				username, title, content = val.split(',')
@@ -624,11 +624,11 @@ def handle_msg(data, conn, raddr):
 					b = BallotNum(accept_pid, int(accept_sequence_num), int(accept_depth))
 					promise_msg = (bal, b, val, int(req))
 					# Only respond to messages with right ballot_num for the leader we know of 
-					print("\rProsposed ballot:", bal, flush=True)
+					# print("\rProsposed ballot:", bal, flush=True)
 					if(ballot_num == bal):
 						accepted_promises.append(promise_msg)
-					else:
-						print('We did not like this promise :>', flush=True)
+					# else:
+					# 	print('We did not like this promise :>', flush=True)
 				promise_count[0] += 1
 
 			elif op == 'ACCEPTED':
@@ -642,7 +642,7 @@ def handle_msg(data, conn, raddr):
 						accepted_accepts.append(accept_msg)
 						accept_count[0] += 1
 					else:
-						print('we did not accept this accepted', b, ballot_num, flush=True)
+						print('Did not accept this Accepted Message', b, ballot_num, flush=True)
 					
 
 
@@ -688,7 +688,7 @@ def respond(conn, raddr):
 
 		data = data.decode()
 		sleep(3)
-		print("Passing message to be handled:", data, flush=True)
+		# print("Passing message to be handled:", data, flush=True)
 		# Append the request to the queue and pop the newest message 
 		# spawn a new thread to handle message ? unsure how to not block receiving but still keeping track of all of the messages 
 		# so simulated network delay and message handling don't block receive
