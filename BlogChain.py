@@ -105,7 +105,7 @@ class BlogChain():
 			self.chain.append(block)
 			self.ptr += 1
 		
-		self.tentative_block = ((self.ptr+1, post_type, username, title, content, nonce), 1)
+		self.tentative_block = ((self.ptr, post_type, username, title, content, nonce), 1)
 	
 	def can_make_post(self, title):
 		# return True if can make post, and False if not
