@@ -753,6 +753,7 @@ if __name__ == "__main__":
 	# Only changes during leader election
 	ballot_num = BallotNum(PID)
 	ballot_num.set_depth(int(local_blog.ptr) + 1)
+	ballot_num.set_time(int(local_blog.ptr) + 1)
 	# This should beat all processes at the start, not used for comparison
 	accept_num = BallotNum('P0')
 	# The transaction string that is accepted and to be comitted and attached  

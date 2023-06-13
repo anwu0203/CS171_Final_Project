@@ -67,6 +67,9 @@ class LamportClock:
 	def get_time(self):
 		return self.time
 	
+	def set_time(self, t):
+		self.time = t
+	
 	def get_pid(self):
 		return self.pid 
 	
